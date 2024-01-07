@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <body>
-  <canvas width="1200" height="800"></canvas>
+  <canvas width="800" height="800"></canvas>
   <div id="status"></div>
-  <div><input type="button" id="render" value="Render">
+  <div><input type="button" id="render" value="Start Zoom">
   <script src="coi-serviceworker.js"></script>
   <script>
     const memory = new WebAssembly.Memory({
-      initial: 1280,
-      maximum: 1280,
+      initial: 1024,
+      maximum: 1024,
       shared: true
     });
 
@@ -16,7 +16,7 @@
     const config = {
       x: -0.743644786,
       y: 0.1318252536,
-      d: 0.00029336
+      d: 2.5
     };
 
     const workerCount = 12;
@@ -24,7 +24,10 @@
 
     let canvasRef;
 
+    // Create an array of workerCount Workers
     let workers = Array.from({length: workerCount}, () => new Worker("worker.js"));
+
+    let animate = false;
 
     let start;
 
@@ -33,7 +36,7 @@
     let lastFps = Date.now();
 
     function render() {
-      // config.d = config.d * 0.99;
+      config.d = config.d * 0.99;
       start = performance.now();
       workers.forEach((worker, i) => {
         worker.postMessage({msg: "render", params: {config, id: i * 200 + 100}});
@@ -45,7 +48,7 @@
       // const canvasRef = e.data.canvasRef;
       const canvasData = new Uint8Array(memory.buffer, canvasRef.canvasPointer, canvasRef.canvasSize);
       const context = document.querySelector("canvas").getContext("2d");
-      const imageData = context.createImageData(1200, 800);
+      const imageData = context.createImageData(800, 800);
       imageData.data.set(canvasData);
       context.putImageData(imageData, 0, 0);
       frameCount += 1;
@@ -55,7 +58,9 @@
         lastFps = Date.now();
       }
       document.getElementById("status").innerHTML = `Num threads: ${workerCount}<br>Frame time: ${timeTaken.toFixed(2)} ms<br> FPS: ${fps} FPS`;
-      requestAnimationFrame(render);
+      if (animate) {
+        requestAnimationFrame(render);
+      }
     }
 
     workers.forEach((worker) => {
@@ -84,6 +89,17 @@
       worker.postMessage({msg: "initwasm", memory});
     });
 
-    document.getElementById("render").onclick = render;
+    function startZoom() {
+      if (animate) {
+        animate = false;
+        document.getElementById("render").value = "Start Zoom";
+      } else {
+        animate = true;
+        document.getElementById("render").value = "Stop Zoom";
+        render();
+      }
+    }
+
+    document.getElementById("render").onclick = startZoom;
   </script>
 </body>

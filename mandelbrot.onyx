@@ -1,9 +1,8 @@
 use core.intrinsics.atomics {__atomic_add, __atomic_store}
 use core {printf, println}
+use core.math
 
-MAX_ITERATIONS :: 1000;
-
-WIDTH :: 1200;
+WIDTH :: 800;
 HEIGHT :: 800;
 
 CANVAS_SIZE :: WIDTH * HEIGHT;
@@ -23,18 +22,22 @@ run :: (cx: f64, cy: f64, diameter: f64, thread: i32) -> i32 {
 
     verticalDiameter := diameter * cast(f64) HEIGHT / cast(f64) WIDTH;
 
+    // Pretty hacky way to determine the appropriate max iterations based on the zoom level
+    // Found through lots of trial and error
+    maxIterations := math.max(50, math.min(1000, cast(u32) (5 / (diameter / 10) + 10)));
+
     while true {
         loc := __atomic_add(&cur_loc, 1);
         if loc >= CANVAS_SIZE do break;
 
         offset := loc * 4;
 
-        x := loc % 1200;
-        y := loc / 1200;
+        x := loc % WIDTH;
+        y := loc / WIDTH;
 
-        numIterations := executeStep(cx, cy, x, y, diameter, verticalDiameter);
+        numIterations := executeStep(cx, cy, x, y, diameter, verticalDiameter, maxIterations);
 
-        if (numIterations == MAX_ITERATIONS) {
+        if (numIterations == maxIterations) {
             CANVAS_BUFFER[offset]     = 0;
             CANVAS_BUFFER[offset + 1] = 0;
             CANVAS_BUFFER[offset + 2] = 0;
@@ -59,42 +62,42 @@ reset :: () {
 
 // inline here if Onyx supports it
 colour :: (iteration: u32, offset: i32, scale: i32) -> u8 {
-  iteration = (iteration * scale + offset) & 1023;
-  if iteration < 256 {
-    return cast(u8) iteration;
-  } elseif iteration < 512 {
-    return 255 - ((cast(u8) iteration) - 255);
-  }
-  return 0;
+    iteration = (iteration * scale + offset) & 1023;
+    if iteration < 256 {
+        return cast(u8) iteration;
+    } elseif iteration < 512 {
+        return 255 - ((cast(u8) iteration) - 255);
+    }
+    return 0;
 }
 
 scale :: (domainStart: f64, domainLength: f64, screenLength: f64, step: f64) -> f64 {
-  return domainStart + domainLength * ((step - screenLength) / screenLength);
+    return domainStart + domainLength * ((step - screenLength) / screenLength) + (domainLength / 2);
 }
 
 
-executeStep :: (cx: f64, cy: f64, x: i32, y: i32, diameter: f64, verticalDiameter: f64) -> i32 {
-  rx := scale(cx, diameter, cast(f64) WIDTH, cast(f64) x);
-  ry := scale(cy, verticalDiameter, cast(f64) HEIGHT, cast(f64) y);
-  return iterateEquation(rx, ry, MAX_ITERATIONS);
+executeStep :: (cx: f64, cy: f64, x: i32, y: i32, diameter: f64, verticalDiameter: f64, maxIterations: u32) -> i32 {
+    rx := scale(cx, diameter, cast(f64) WIDTH, cast(f64) x);
+    ry := scale(cy, verticalDiameter, cast(f64) HEIGHT, cast(f64) y);
+    return iterateEquation(rx, ry, maxIterations);
 }
 
-iterateEquation :: (x0: f64, y0: f64, maxiterations: u32) -> u32 {
-  a := 0.0;
-  b := 0.0;
-  rx := 0.0;
-  ry := 0.0;
-  ab: f64;
-  iterations: u32 = 0;
-  while (iterations < maxiterations && (rx * rx + ry * ry <= 4)) {
-    rx = a * a - b * b + x0;
-    ab = a * b;
-    ry = ab + ab + y0;
-    a = rx;
-    b = ry;
-    iterations += 1;
-  }
-  return iterations;
+iterateEquation :: (x0: f64, y0: f64, maxIterations: u32) -> u32 {
+    a := 0.0;
+    b := 0.0;
+    rx := 0.0;
+    ry := 0.0;
+    ab: f64;
+    iterations: u32 = 0;
+    while (iterations < maxIterations && (rx * rx + ry * ry <= 4)) {
+        rx = a * a - b * b + x0;
+        ab = a * b;
+        ry = ab + ab + y0;
+        a = rx;
+        b = ry;
+        iterations += 1;
+    }
+    return iterations;
 }
 
 

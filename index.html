@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<body>
+  <canvas width="1200" height="800"></canvas>
+  <div id="status"></div>
+  <script src="coi-serviceworker.js"></script>
+  <script src="mutex.js"></script>
+  <script>
+    const memory = new WebAssembly.Memory({
+      initial: 1280,
+      maximum: 1280,
+      shared: true
+    });
+
+    // the 'seahorse tail'
+    // https://commons.wikimedia.org/wiki/File:Mandel_zoom_04_seehorse_tail.jpg
+    const config = {
+      x: -0.743644786,
+      y: 0.1318252536,
+      d: 0.00029336
+    };
+
+    const sharedArrayBuffer = new SharedArrayBuffer(4);
+    const mutexArr = new Int32Array(sharedArrayBuffer);
+
+    const workerCount = 8;
+    let doneCount = 0;
+    const start = performance.now();
+
+    for (let i = 0; i < workerCount; i++) {
+      const worker = new Worker("worker.js");
+      worker.onmessage = e => {
+        const msg = e.data.msg;
+        if (msg == "done") {
+          doneCount++;
+          if (doneCount === workerCount) {
+            const timeTaken = performance.now() - start;
+            console.log("done", );
+
+            const canvasRef = e.data.canvasRef;
+            const canvasData = new Uint8Array(memory.buffer, canvasRef.canvasPointer, canvasRef.canvasSize);
+            const context = document.querySelector("canvas").getContext("2d");
+            const imageData = context.createImageData(1200, 800);
+            imageData.data.set(canvasData);
+            context.putImageData(imageData, 0, 0);
+            document.getElementById("status").innerHTML = `Rendered on ${workerCount} threads in ${timeTaken} ms`;
+          }
+        }
+      };
+      worker.postMessage({ mutexArr, memory, config, id: i * 200 + 100 });
+    }
+  </script>
+</body>

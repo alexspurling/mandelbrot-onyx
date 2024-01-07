@@ -1,0 +1,108 @@
+use core.intrinsics.atomics {__atomic_add}
+use core {printf, println}
+
+MAX_ITERATIONS :: 10000;
+
+WIDTH :: 1200;
+HEIGHT :: 800;
+
+CANVAS_SIZE :: WIDTH * HEIGHT;
+CANVAS_BUFFER_SIZE :: CANVAS_SIZE * 4; // 4 bytes per pixel
+CANVAS_BUFFER: [CANVAS_BUFFER_SIZE] u8;
+
+
+// Current pixel in the canvas buffer to be processed. Shared between all threads and updated atomically
+cur_loc := 0;
+
+#export "run" run
+run :: (cx: f64, cy: f64, diameter: f64, thread: i32) -> i32 {
+
+    count := 0;
+
+    iters: u64 = 0;
+
+    verticalDiameter := diameter * cast(f64) HEIGHT / cast(f64) WIDTH;
+
+    while true {
+        loc := __atomic_add(&cur_loc, 1);
+        if loc >= CANVAS_SIZE do break;
+
+        offset := loc * 4;
+
+        x := loc % 1200;
+        y := loc / 1200;
+
+        numIterations := executeStep(cx, cy, x, y, diameter, verticalDiameter);
+
+        if (numIterations == MAX_ITERATIONS) {
+            CANVAS_BUFFER[offset]     = 0;
+            CANVAS_BUFFER[offset + 1] = 0;
+            CANVAS_BUFFER[offset + 2] = 0;
+            CANVAS_BUFFER[offset + 3] = 255;
+        } else {
+            CANVAS_BUFFER[offset]     = colour(numIterations, 0,   4);
+            CANVAS_BUFFER[offset + 1] = colour(numIterations, 128, 4);
+            CANVAS_BUFFER[offset + 2] = colour(numIterations, 356, 4);
+            CANVAS_BUFFER[offset + 3] = 255;
+        }
+
+        count += 1;
+    }
+
+    return count;
+}
+
+// inline here if Onyx supports it
+colour :: (iteration: u32, offset: i32, scale: i32) -> u8 {
+  iteration = (iteration * scale + offset) & 1023;
+  if iteration < 256 {
+    return cast(u8) iteration;
+  } elseif iteration < 512 {
+    return 255 - ((cast(u8) iteration) - 255);
+  }
+  return 0;
+}
+
+scale :: (domainStart: f64, domainLength: f64, screenLength: f64, step: f64) -> f64 {
+  return domainStart + domainLength * ((step - screenLength) / screenLength);
+}
+
+
+executeStep :: (cx: f64, cy: f64, x: i32, y: i32, diameter: f64, verticalDiameter: f64) -> i32 {
+  rx := scale(cx, diameter, cast(f64) WIDTH, cast(f64) x);
+  ry := scale(cy, verticalDiameter, cast(f64) HEIGHT, cast(f64) y);
+  return iterateEquation(rx, ry, MAX_ITERATIONS);
+}
+
+iterateEquation :: (x0: f64, y0: f64, maxiterations: u32) -> u32 {
+  a := 0.0;
+  b := 0.0;
+  rx := 0.0;
+  ry := 0.0;
+  ab: f64;
+  iterations: u32 = 0;
+  while (iterations < maxiterations && (rx * rx + ry * ry <= 4)) {
+    rx = a * a - b * b + x0;
+    ab = a * b;
+    ry = ab + ab + y0;
+    a = rx;
+    b = ry;
+    iterations += 1;
+  }
+  return iterations;
+}
+
+
+#export "getCanvasSize" getCanvasSize
+getCanvasSize :: () -> i32 {
+    return CANVAS_BUFFER_SIZE;
+}
+
+#export "getCanvasPointer" getCanvasPointer
+getCanvasPointer :: () -> rawptr {
+    return &CANVAS_BUFFER;
+}
+
+main :: () {
+
+}

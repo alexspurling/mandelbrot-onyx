@@ -9,6 +9,8 @@ CANVAS_SIZE :: WIDTH * HEIGHT;
 CANVAS_BUFFER_SIZE :: CANVAS_SIZE * 4; // 4 bytes per pixel
 CANVAS_BUFFER: [CANVAS_BUFFER_SIZE] u8;
 
+MAX_ITERATIONS :: 1000;
+
 
 // Current pixel in the canvas buffer to be processed. Shared between all threads and updated atomically
 cur_loc := 0;
@@ -23,8 +25,8 @@ run :: (cx: f64, cy: f64, diameter: f64, thread: i32) -> i32 {
     verticalDiameter := diameter * cast(f64) HEIGHT / cast(f64) WIDTH;
 
     // Pretty hacky way to determine the appropriate max iterations based on the zoom level
-    // Found through lots of trial and error
-    maxIterations := math.max(50, math.min(1000, cast(u32) (5 / (diameter / 10) + 10)));
+    // Found through lots of trial and error but actually runs slower than fixing the max iterations to 1000
+    // maxIterations := math.max(50, math.min(1000, cast(u32) (5 / (diameter / 10) + 10)));
 
     while true {
         loc := __atomic_add(&cur_loc, 1);
@@ -35,9 +37,9 @@ run :: (cx: f64, cy: f64, diameter: f64, thread: i32) -> i32 {
         x := loc % WIDTH;
         y := loc / WIDTH;
 
-        numIterations := executeStep(cx, cy, x, y, diameter, verticalDiameter, maxIterations);
+        numIterations := executeStep(cx, cy, x, y, diameter, verticalDiameter, MAX_ITERATIONS);
 
-        if (numIterations == maxIterations) {
+        if (numIterations == MAX_ITERATIONS) {
             CANVAS_BUFFER[offset]     = 0;
             CANVAS_BUFFER[offset + 1] = 0;
             CANVAS_BUFFER[offset + 2] = 0;

@@ -1,5 +1,3 @@
-importScripts("mutex.js");
-
 const decodeOnyxString = (memory, ptr, len) => {
   let v = new DataView(memory.buffer);
 
@@ -19,23 +17,12 @@ const onyx_kill_thread = () => {
   console.log("Worker thread killed");
 }
 
-onmessage = ({ data }) => {
-  const {
-    mutexArr,
-    memory,
-    config: { x, y, d },
-    id
-  } = data;
+let wasmModule;
 
-  const mutex = new Mutex(mutexArr);
-
-  fetch("mandelbrot.wasm")
+async function initWasm(memory) {
+  wasmModule = await fetch("mandelbrot.wasm")
     .then(response => response.arrayBuffer())
     .then(bytes => {
-        // Instantiating and initialising the WebAssembly object does not appear to be thread safe
-        // so we have to use a mutex to ensure each thread is initialised independently
-        // Another way we could do this is with message passing to and from the main thread
-        mutex.lock();
         return WebAssembly.instantiate(bytes, {
           host: {
               print_str: (ptr, len) => logOnyxString(memory, ptr, len),
@@ -47,21 +34,38 @@ onmessage = ({ data }) => {
           }
         });
       }
-    )
-    .then(({ instance }) => {
-      instance.exports._initialize();
-      // We are now initialised so notify the other threads
-      mutex.unlock();
+    );
+}
 
-      console.log("starting", id);
-      const startTime = performance.now();
-      const count = instance.exports.run(x, y, d, id);
-      const timeTaken = performance.now() - startTime;
-      const canvasRef = {
-        canvasSize: instance.exports.getCanvasSize(),
-        canvasPointer: instance.exports.getCanvasPointer(),
-      }
-      console.log("Thread", id, "processed", count, "pixels in", timeTaken, "ms");
-      postMessage({msg:"done", canvasRef: canvasRef});
-    });
+function initOnyx() {
+  wasmModule.instance.exports._initialize();
+  return {
+    canvasSize: wasmModule.instance.exports.getCanvasSize(),
+    canvasPointer: wasmModule.instance.exports.getCanvasPointer(),
+  }
+}
+
+onmessage = async (msg) => {
+  if (msg.data.msg === "initwasm") {
+    // This needs to be done once by all threads
+    await initWasm(msg.data.memory);
+    postMessage({msg:"wasminitialised"});
+  } else if (msg.data.msg === "initonyx") {
+    // This needs to be done once by one thread
+    let canvasRef = initOnyx();
+    postMessage({msg:"onyxinitialised", canvasRef: canvasRef});
+  } else if (msg.data.msg === "reset") {
+    wasmModule.instance.exports.reset();
+    postMessage({msg:"reset"});
+  } else if (msg.data.msg === "render") {
+    const {
+      config: { x, y, d },
+      id
+    } = msg.data.params;
+    const startTime = performance.now();
+    const count = wasmModule.instance.exports.run(x, y, d, id);
+    const timeTaken = performance.now() - startTime;
+    console.log("Thread", id, "processed", count, "pixels in", timeTaken.toFixed(2), "ms");
+    postMessage({msg:"rendered"});
+  }
 };

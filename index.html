@@ -2,8 +2,8 @@
 <body>
   <canvas width="1200" height="800"></canvas>
   <div id="status"></div>
+  <div><input type="button" id="render" value="Render">
   <script src="coi-serviceworker.js"></script>
-  <script src="mutex.js"></script>
   <script>
     const memory = new WebAssembly.Memory({
       initial: 1280,
@@ -19,34 +19,71 @@
       d: 0.00029336
     };
 
-    const sharedArrayBuffer = new SharedArrayBuffer(4);
-    const mutexArr = new Int32Array(sharedArrayBuffer);
-
-    const workerCount = 8;
+    const workerCount = 12;
     let doneCount = 0;
-    const start = performance.now();
 
-    for (let i = 0; i < workerCount; i++) {
-      const worker = new Worker("worker.js");
+    let canvasRef;
+
+    let workers = Array.from({length: workerCount}, () => new Worker("worker.js"));
+
+    let start;
+
+    let frameCount = 0;
+    let fps = 0;
+    let lastFps = Date.now();
+
+    function render() {
+      // config.d = config.d * 0.99;
+      start = performance.now();
+      workers.forEach((worker, i) => {
+        worker.postMessage({msg: "render", params: {config, id: i * 200 + 100}});
+      });
+    }
+
+    function drawCanvas() {
+      const timeTaken = performance.now() - start;
+      // const canvasRef = e.data.canvasRef;
+      const canvasData = new Uint8Array(memory.buffer, canvasRef.canvasPointer, canvasRef.canvasSize);
+      const context = document.querySelector("canvas").getContext("2d");
+      const imageData = context.createImageData(1200, 800);
+      imageData.data.set(canvasData);
+      context.putImageData(imageData, 0, 0);
+      frameCount += 1;
+      if (Date.now() - lastFps > 1000) {
+        fps = frameCount;
+        frameCount = 0;
+        lastFps = Date.now();
+      }
+      document.getElementById("status").innerHTML = `Num threads: ${workerCount}<br>Frame time: ${timeTaken.toFixed(2)} ms<br> FPS: ${fps} FPS`;
+      requestAnimationFrame(render);
+    }
+
+    workers.forEach((worker) => {
       worker.onmessage = e => {
         const msg = e.data.msg;
-        if (msg == "done") {
+        if (msg == "wasminitialised") {
           doneCount++;
           if (doneCount === workerCount) {
-            const timeTaken = performance.now() - start;
-            console.log("done", );
-
-            const canvasRef = e.data.canvasRef;
-            const canvasData = new Uint8Array(memory.buffer, canvasRef.canvasPointer, canvasRef.canvasSize);
-            const context = document.querySelector("canvas").getContext("2d");
-            const imageData = context.createImageData(1200, 800);
-            imageData.data.set(canvasData);
-            context.putImageData(imageData, 0, 0);
-            document.getElementById("status").innerHTML = `Rendered on ${workerCount} threads in ${timeTaken} ms`;
+            // When all the Wasm module instances have been initialised, try to initialise Onyx itself
+            worker.postMessage({msg: "initonyx"});
+            doneCount = 0;
           }
+        } else if (msg === "onyxinitialised") {
+          canvasRef = e.data.canvasRef;
+          render();
+        } else if (msg === "rendered") {
+          doneCount++;
+          if (doneCount === workerCount) {
+            doneCount = 0;
+            worker.postMessage({msg: "reset"});
+          }
+        } else if (msg === "reset") {
+          drawCanvas();
         }
       };
-      worker.postMessage({ mutexArr, memory, config, id: i * 200 + 100 });
-    }
+      worker.postMessage({msg: "initwasm", memory});
+    });
+
+    document.getElementById("render").onclick = render;
   </script>
 </body>

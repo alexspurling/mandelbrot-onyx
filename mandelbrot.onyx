@@ -1,7 +1,7 @@
-use core.intrinsics.atomics {__atomic_add}
+use core.intrinsics.atomics {__atomic_add, __atomic_store}
 use core {printf, println}
 
-MAX_ITERATIONS :: 10000;
+MAX_ITERATIONS :: 1000;
 
 WIDTH :: 1200;
 HEIGHT :: 800;
@@ -50,6 +50,11 @@ run :: (cx: f64, cy: f64, diameter: f64, thread: i32) -> i32 {
     }
 
     return count;
+}
+
+#export "reset" reset
+reset :: () {
+    __atomic_store(&cur_loc, 0);
 }
 
 // inline here if Onyx supports it
